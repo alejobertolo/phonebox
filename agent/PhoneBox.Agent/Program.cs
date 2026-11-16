@@ -140,7 +140,12 @@ app.MapGet("/api/state", (SystemMonitor monitor, ConfigStore config) =>
             snapshot.RamTotalGb,
             snapshot.NetDownBps,
             snapshot.NetUpBps,
-            snapshot.Disks,
+            Disks = snapshot.Disks.Select((disk, index) => new
+            {
+                Name = $"Disk {index + 1}",
+                disk.UsedGb,
+                disk.TotalGb,
+            }).ToArray(),
             snapshot.UptimeSec,
         },
     });
