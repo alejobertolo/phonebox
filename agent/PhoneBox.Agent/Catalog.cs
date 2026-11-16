@@ -20,8 +20,8 @@ public static class Catalog
 
     private static readonly JsonSerializerOptions Opts = new() { PropertyNameCaseInsensitive = true };
 
-    public static readonly string WidgetsJson = Read("widgets.json");
-    public static readonly string TemplatesJson = Read("templates.json");
+    public static readonly string WidgetsJson = LiteSafety.ReadOnlyWidgetsJson(Read("widgets.json"));
+    public static readonly string TemplatesJson = LiteSafety.ReadOnlyTemplatesJson(Read("templates.json"));
 
     public static readonly IReadOnlyList<TemplateDef> Templates =
         JsonSerializer.Deserialize<List<TemplateDef>>(TemplatesJson, Opts) ?? [];
