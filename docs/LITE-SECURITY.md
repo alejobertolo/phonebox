@@ -45,6 +45,22 @@ pero los cambios **no se pueden guardar todavía**: al pulsar Guardar el servido
 Es una limitación deliberada de Lite v1. En una segunda versión podremos habilitar guardado local
 mediante un endpoint separado con autenticación y validación estricta de solo widgets permitidos.
 
+## Correcciones de endurecimiento (16/11/2026)
+
+- **Datos locales independientes:** `AppPaths.AppName = "PhoneBoxLite"`. El agente no usa la carpeta
+  `PhoneBox` de la versión upstream, ni lee sus archivos de configuración anteriores.
+- **WebView sin navegación externa:** `MainActivity.shouldOverrideUrlLoading` bloquea cambios
+  de página hacia orígenes o esquemas no autorizados. `shouldInterceptRequest` devuelve
+  una respuesta explícita de denegación para cualquier recurso desconocido, también si
+  usa el host virtual de activos. Esto evita que una ruta no atendida continúe como
+  una solicitud real a Internet.
+- **Prueba de regresión agregada** para verificar que las carpetas de configuración/cache
+  sean `PhoneBoxLite`.
+
+**Verificación disponible:** lectura del código y revisión estática de las rutas declaradas.
+**No verificado:** ejecución real de la prueba nueva, compilación .NET/Gradle, tráfico de red
+en Android, instalación por ADB y comportamiento de la interfaz.
+
 ## Riesgos pendientes y verificaciones necesarias
 
 1. **Compilación y pruebas no ejecutadas**: hacen falta .NET SDK 10, JDK 17 y Android SDK Platform 35.
