@@ -16,12 +16,8 @@ class AgentStream(private val link: AgentLink, private val deliver: (event: Stri
     @Volatile private var current: Closeable? = null
     private var thread: Thread? = null
 
-    fun start() {
-        if (running) return
-        running = true
-        val gen = ++generation
-        thread = Thread({ loop(gen) }, "agent-stream").apply { isDaemon = true; start() }
-    }
+    // Lite disables the background SSE loop; the panel polls USB state instead.
+    fun start() { return }
 
     fun stop() {
         running = false
