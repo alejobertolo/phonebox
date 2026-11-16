@@ -375,7 +375,7 @@ app.MapGet("/api/info", (AdbReverse adb) => Results.Json(new
     version = AppPaths.Version,
     os = AppPaths.Os,
     connected = adb.Connected,
-    via = adb.Connected ? "USB" : null,
+    via = adb.Connected ? "USB" : null
 }));
 
 app.MapPost("/api/phone/open", async (AdbReverse adb) => { await adb.OpenPanelAsync(); return Results.Ok(); });
