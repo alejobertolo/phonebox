@@ -96,7 +96,9 @@ class MainActivity : Activity(), SensorEventListener {
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val url = request.url
-                if (url.host == ASSET_HOST && url.path?.startsWith("/agent/") == true)
+                // Lite forbids all remote WebView traffic, including images, fonts and widgets.
+                if (url.scheme != "https" || url.host != ASSET_HOST) return FORBIDDEN()
+                if (url.path?.startsWith("/agent/") == true)
                     return if (fromPanel(request)) proxy(request) else FORBIDDEN()
                 val r = assetLoader.shouldInterceptRequest(url)
                 // the panel is made of ES modules, which need a JavaScript MIME type
@@ -113,17 +115,17 @@ class MainActivity : Activity(), SensorEventListener {
             WebViewCompat.addDocumentStartJavaScript(web, "window.__phoneboxKey='$bridgeKey';", setOf("https://$ASSET_HOST"))
         web.addJavascriptInterface(Bridge(), "Android")
         // Lets you debug the panel from the computer via chrome://inspect.
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+        WebView.setWebContentsDebuggingEnabled(false) // no Chrome debugging bridge in Lite
 
         web.loadUrl("https://$ASSET_HOST/assets/www/index.html")
         hideSystemUi()
-        handlePairingLink(intent)
+        // No pairing deep links or Wi-Fi onboarding in Lite.
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handlePairingLink(intent)
+        // Ignore remote pairing links.
     }
 
     /** A pairing link from the computer's QR code (Settings › Wi-Fi › Pair a phone over Wi-Fi): ask, then pair. */
@@ -372,27 +374,17 @@ class MainActivity : Activity(), SensorEventListener {
          * (Back + Overview held together, or turning the setting off). Android asks once to confirm.
          */
         @JavascriptInterface
-        fun setPinned(key: String, on: Boolean) {
-            if (!ok(key)) return
-            runOnUiThread {
-                val pinned = getSystemService(ActivityManager::class.java).lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
-                try { if (on && !pinned) startLockTask() else if (!on && pinned) stopLockTask() } catch (_: Exception) {}
-            }
-        }
+        fun setPinned(key: String, on: Boolean) { /* disabled: Lite never pins Android */ }
 
         /** The computers this phone is paired with (for switching over Wi-Fi). */
         @JavascriptInterface
-        fun pcs(key: String): String = if (ok(key)) link.pcsJson() else "[]"
-
-        /** Switches to another paired computer and reloads the panel from it. */
-        @JavascriptInterface
-        fun selectPc(key: String, id: String) {
-            if (!ok(key) || !link.select(id)) return
-            runOnUiThread { stream.stop(); stream.start(); web.reload() }
-        }
+        fun pcs(key: String): String = "[]"
 
         @JavascriptInterface
-        fun forgetPc(key: String, id: String) { if (ok(key)) link.forget(id) }
+        fun selectPc(key: String, id: String) { /* Wi-Fi disabled */ }
+
+        @JavascriptInterface
+        fun forgetPc(key: String, id: String) { /* Wi-Fi disabled */ }
 
         /** "landscape" (default), "portrait" or "auto" (follow the phone). */
         @JavascriptInterface
@@ -410,13 +402,7 @@ class MainActivity : Activity(), SensorEventListener {
 
         /** Offers the panel as a home app (see HomeAlias in the manifest); the agent can then make it the default. */
         @JavascriptInterface
-        fun setHomeScreen(key: String, on: Boolean) {
-            if (!ok(key)) return
-            val alias = ComponentName(this@MainActivity, "$packageName.HomeAlias")
-            val want = if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-            if (packageManager.getComponentEnabledSetting(alias) != want)
-                packageManager.setComponentEnabledSetting(alias, want, PackageManager.DONT_KILL_APP)
-        }
+        fun setHomeScreen(key: String, on: Boolean) { /* disabled: no home alias in Lite */ }
 
         @JavascriptInterface
         fun version(key: String): String = if (ok(key)) packageManager.getPackageInfo(packageName, 0).versionName ?: "" else ""
