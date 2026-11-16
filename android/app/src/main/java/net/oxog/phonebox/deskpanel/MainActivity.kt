@@ -3,12 +3,9 @@ package net.oxog.phonebox.deskpanel
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityManager
-import android.app.AlertDialog
-import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
-import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -26,7 +23,6 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
-import android.widget.Toast
 import android.webkit.JavascriptInterface
 import android.webkit.ConsoleMessage
 import android.webkit.WebResourceRequest
@@ -94,13 +90,19 @@ class MainActivity : Activity(), SensorEventListener {
             }
         }
         web.webViewClient = object : WebViewClient() {
+            // Block top-level navigation to third-party pages (including intent:// and file://).
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                request.url.toString() != "https://$ASSET_HOST/assets/www/index.html"
+
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val url = request.url
-                if (url.host == ASSET_HOST && url.path?.startsWith("/agent/") == true)
+                // Deny unknown URLs even on the virtual assets host: otherwise WebView may fetch the internet.
+                if (url.scheme != "https" || url.host != ASSET_HOST) return FORBIDDEN()
+                if (url.path?.startsWith("/agent/") == true)
                     return if (fromPanel(request)) proxy(request) else FORBIDDEN()
-                val r = assetLoader.shouldInterceptRequest(url)
-                // the panel is made of ES modules, which need a JavaScript MIME type
-                if (r != null && url.path?.endsWith(".js") == true) r.mimeType = "text/javascript"
+                val r = assetLoader.shouldInterceptRequest(url) ?: return FORBIDDEN()
+                // The panel uses ES modules, which need a JavaScript MIME type.
+                if (url.path?.endsWith(".js") == true) r.mimeType = "text/javascript"
                 return r
             }
 
@@ -113,55 +115,11 @@ class MainActivity : Activity(), SensorEventListener {
             WebViewCompat.addDocumentStartJavaScript(web, "window.__phoneboxKey='$bridgeKey';", setOf("https://$ASSET_HOST"))
         web.addJavascriptInterface(Bridge(), "Android")
         // Lets you debug the panel from the computer via chrome://inspect.
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+        WebView.setWebContentsDebuggingEnabled(false) // no Chrome debugging bridge in Lite
 
         web.loadUrl("https://$ASSET_HOST/assets/www/index.html")
         hideSystemUi()
-        handlePairingLink(intent)
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handlePairingLink(intent)
-    }
-
-    /** A pairing link from the computer's QR code (Settings › Wi-Fi › Pair a phone over Wi-Fi): ask, then pair. */
-    private fun handlePairingLink(intent: Intent?) {
-        val pairing = AgentLink.PairLink.parse(intent?.data) ?: return
-        intent?.data = null // not again after a configuration change
-        AlertDialog.Builder(this)
-            .setTitle("Pair with a computer?")
-            .setMessage("\"${pairing.pc}\" at ${pairing.hosts.joinToString()} (port ${pairing.port}).\n\n" +
-                "Check that the computer's pairing window shows the code ${pairing.check}.\n\n" +
-                "Continue only if you started pairing on that computer.")
-            .setPositiveButton("Pair") { _, _ -> pair(pairing) }
-            .setNegativeButton("Cancel", null)
-            .setOnDismissListener { hideSystemUi() }
-            .show()
-            .plainButtons()
-    }
-
-    /** Dialog buttons as written: the default all-caps follows the phone's language ("PAİR" on a Turkish phone). */
-    private fun AlertDialog.plainButtons(): AlertDialog = apply {
-        listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE).forEach { getButton(it)?.isAllCaps = false }
-    }
-
-    private fun pair(pairing: AgentLink.PairLink) {
-        Toast.makeText(this, "Pairing with ${pairing.pc}...", Toast.LENGTH_SHORT).show()
-        Thread {
-            val problem = link.claim(pairing)
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread // the pairing is stored; there is no window to show it in
-                if (problem == null) {
-                    Toast.makeText(this, "Paired with ${pairing.pc}", Toast.LENGTH_LONG).show()
-                    stream.stop(); stream.start(); web.reload()
-                } else {
-                    AlertDialog.Builder(this).setTitle("Pairing did not work").setMessage(problem)
-                        .setPositiveButton("OK", null).setOnDismissListener { hideSystemUi() }.show().plainButtons()
-                }
-            }
-        }.start()
+        // No pairing deep links or Wi-Fi onboarding in Lite.
     }
 
     /**
@@ -372,27 +330,17 @@ class MainActivity : Activity(), SensorEventListener {
          * (Back + Overview held together, or turning the setting off). Android asks once to confirm.
          */
         @JavascriptInterface
-        fun setPinned(key: String, on: Boolean) {
-            if (!ok(key)) return
-            runOnUiThread {
-                val pinned = getSystemService(ActivityManager::class.java).lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
-                try { if (on && !pinned) startLockTask() else if (!on && pinned) stopLockTask() } catch (_: Exception) {}
-            }
-        }
+        fun setPinned(key: String, on: Boolean) { /* disabled: Lite never pins Android */ }
 
         /** The computers this phone is paired with (for switching over Wi-Fi). */
         @JavascriptInterface
-        fun pcs(key: String): String = if (ok(key)) link.pcsJson() else "[]"
-
-        /** Switches to another paired computer and reloads the panel from it. */
-        @JavascriptInterface
-        fun selectPc(key: String, id: String) {
-            if (!ok(key) || !link.select(id)) return
-            runOnUiThread { stream.stop(); stream.start(); web.reload() }
-        }
+        fun pcs(key: String): String = "[]"
 
         @JavascriptInterface
-        fun forgetPc(key: String, id: String) { if (ok(key)) link.forget(id) }
+        fun selectPc(key: String, id: String) { /* Wi-Fi disabled */ }
+
+        @JavascriptInterface
+        fun forgetPc(key: String, id: String) { /* Wi-Fi disabled */ }
 
         /** "landscape" (default), "portrait" or "auto" (follow the phone). */
         @JavascriptInterface
@@ -410,13 +358,7 @@ class MainActivity : Activity(), SensorEventListener {
 
         /** Offers the panel as a home app (see HomeAlias in the manifest); the agent can then make it the default. */
         @JavascriptInterface
-        fun setHomeScreen(key: String, on: Boolean) {
-            if (!ok(key)) return
-            val alias = ComponentName(this@MainActivity, "$packageName.HomeAlias")
-            val want = if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-            if (packageManager.getComponentEnabledSetting(alias) != want)
-                packageManager.setComponentEnabledSetting(alias, want, PackageManager.DONT_KILL_APP)
-        }
+        fun setHomeScreen(key: String, on: Boolean) { /* disabled: no home alias in Lite */ }
 
         @JavascriptInterface
         fun version(key: String): String = if (ok(key)) packageManager.getPackageInfo(packageName, 0).versionName ?: "" else ""
@@ -426,7 +368,7 @@ class MainActivity : Activity(), SensorEventListener {
         private const val ASSET_HOST = "appassets.androidplatform.net"
         private val NO_STORE = mapOf("Cache-Control" to "no-store")
         private const val PANEL_HEADER = "X-PhoneBox-Panel"
-        private val READ_ONLY_IMAGES = setOf("/agent/api/art", "/agent/api/procs/icon", "/agent/api/controls/radio-logo", "/agent/api/apps/icon", "/agent/api/discord/img")
+        private val READ_ONLY_IMAGES = emptySet<String>() // Lite serves no image proxy
         private fun FORBIDDEN() = WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", NO_STORE, java.io.ByteArrayInputStream(ByteArray(0)))
     }
 }

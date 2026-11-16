@@ -1,137 +1,101 @@
-name: build
+# PhoneBox Lite CI (this workflow file differs from upstream only on the Lite branch).
+# No GitHub Releases. CI publishes 3-day SHA256-listed preview artifacts for inspection only.
+name: PhoneBox Lite — compile and verify
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  metadata:
-    name: Release metadata
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: |
-          python3 tools/check-release.py
-          python3 tools/test-winget-manifests.py
-
   android:
-    name: Android panel (APK)
+    name: Android 9 compatibility and APK build
+    if: github.event_name == 'workflow_dispatch' || (github.head_ref == 'feat/lite-read-only-v1' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle   # the Gradle distribution and dependencies, so a download hiccup does not fail the build
-      - name: Check Android API compatibility and build debug APK
+          cache: gradle
+      - name: Verify Lite source contract (static)
+        run: python3 tools/check-lite-source.py
+      - name: Lint and compile Android debug APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew lintDebug assembleDebug --no-daemon --console=plain
+      - name: Prepare Android inspection preview with provenance and SHA256
+        run: |
+          set -euo pipefail
+          mkdir -p preview/android
+          cp android/app/build/outputs/apk/debug/app-debug.apk preview/android/PhoneBoxLite-debug.apk
+          cp LICENSE preview/android/LICENSE
+          {
+            echo "EXPERIMENTAL PHONEBOX LITE APK — NOT CLEARED FOR INSTALLATION"
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "workflow=$GITHUB_RUN_ID"
+            echo "package=net.alejobertolo.phoneboxlite"
+            echo "minimum=Android 7 (Android 9 not yet tested physically)"
+            echo "debug_signed=yes; NOT a production release"
+          } > preview/android/BUILD-INFO.txt
+          (cd preview/android && sha256sum PhoneBoxLite-debug.apk > SHA256SUMS.txt)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: phonebox-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-
-  ui:
-    name: UI tests (panel and settings in a browser)
-    # Keep browser dependencies stable during the ubuntu-latest image migration.
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-      - name: Install Playwright
-        working-directory: tools/ui-tests
-        run: npm ci && npx playwright install --with-deps chromium
-      - name: Run the tests against the web demo
-        working-directory: tools/ui-tests
-        run: npx playwright test
-        env:
-          CI: '1'
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: ui-test-report
-          path: |
-            ui-test-report/
-            tools/ui-tests/test-results/
+          name: PhoneBoxLite-Android-preview
+          path: preview/android/
+          if-no-files-found: error
+          retention-days: 3
 
   agent:
-    name: Agent (${{ matrix.rid }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, rid: win-x64, tfm: net10.0-windows10.0.19041.0 }
-          - { os: ubuntu-latest, rid: linux-x64, tfm: net10.0 }
-          - { os: macos-latest, rid: osx-arm64, tfm: net10.0 }
-    runs-on: ${{ matrix.os }}
+    name: Agent unit tests and macOS ARM compilation
+    if: github.event_name == 'workflow_dispatch' || (github.head_ref == 'feat/lite-read-only-v1' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: 10.0.x
-      - name: Unit tests
-        run: dotnet test agent/PhoneBox.Agent.Tests --nologo
-      - name: Local packaging staging cleanup
-        if: matrix.rid == 'win-x64'
-        shell: pwsh
-        run: ./tools/test-build-staging.ps1
-      - name: Windows installer regression checks
-        if: matrix.rid == 'win-x64'
-        shell: pwsh
+      - name: Verify Lite source contract (static)
+        run: python3 tools/check-lite-source.py
+      # Scope the first Lite build to the read-only boundary and passive system-monitor path.
+      # The full upstream suite has 31 failing cases for deliberately removed integrations.
+      # Keep those tests in the repository; do NOT represent this as a full-suite pass.
+      - name: Lite boundary, network math and endpoint tests
+        run: dotnet test agent/PhoneBox.Agent.Tests --nologo --filter "FullyQualifiedName~LiteSafetyTests|FullyQualifiedName~NetworkRatesTests|FullyQualifiedName~EndpointTests"
+      - name: Build Mac Apple Silicon binary (cross compile, not run on Mac)
         run: |
-          ./tools/test-install-apk.ps1
-          ./tools/test-windows-source-publish.ps1
-      - name: Unix installer regression checks with the system Bash
-        if: matrix.rid != 'win-x64'
+          dotnet publish agent/PhoneBox.Agent -c Release -f net10.0 -r osx-arm64 --self-contained true -p:PublishSingleFile=true -o out/osx-arm64 --nologo
+          test -f out/osx-arm64/PhoneBoxAgent
+      - name: Build Linux agent for isolated CI smoke test
+        run: dotnet publish agent/PhoneBox.Agent -c Release -f net10.0 -r linux-x64 --self-contained false -o out/linux-x64 --nologo
+      - name: Read-only API smoke test on temporary GitHub runner
+        run: bash tools/lite-smoke.sh out/linux-x64/PhoneBoxAgent
+      - name: Prepare macOS ARM64 inspection preview with provenance and SHA256
         run: |
-          python3 tools/test-unix-installer.py --bash /bin/bash
-          python3 tools/test-unix-autostart.py /bin/bash
-          python3 tools/test-unix-uninstall.py
-      # the same build as the release (release.yml), so a pull request runs what ships
-      - name: Publish agent (self-contained, single file)
-        run: dotnet publish agent/PhoneBox.Agent -c Release -f ${{ matrix.tfm }} -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o out --nologo
-      - name: Sign macOS apphost ad hoc
-        if: startsWith(matrix.rid, 'osx-')
-        run: codesign --force --sign - out/PhoneBoxAgent
-      - name: Smoke test the single-file agent (Windows)
-        if: matrix.rid == 'win-x64'
-        shell: pwsh
-        run: |
-          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content -Raw agent/PhoneBox.Agent/PhoneBox.Agent.csproj)).Groups[1].Value
-          python tools/smoke-agent.py out/PhoneBoxAgent.exe --version $version
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Smoke test (starts, serves the API)
-        if: matrix.rid != 'win-x64'
-        run: |
-          chmod +x out/PhoneBoxAgent
-          out/PhoneBoxAgent > agent.log 2>&1 &
-          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8765/api/state > state.json && break; sleep 1; done
-          sleep 4
-          curl -sf http://127.0.0.1:8765/api/state > state.json
-          curl -sf "http://127.0.0.1:8765/api/procs?top=3" > /dev/null; sleep 4
-          curl -sf "http://127.0.0.1:8765/api/procs?top=3" > procs.json
-          cat agent.log
-          head -c 700 state.json; echo
-          head -c 500 procs.json; echo
-          curl -sf http://127.0.0.1:8765/api/info; echo
-          # the system and process readings must work on this platform
-          python3 -c "import json; s=json.load(open('state.json')); p=json.load(open('procs.json')); assert s['pc'] and s['pc']['cpu'] is not None and s['pc']['ramTotalGb'] > 0, s['pc']; assert p['groups'], p; print('cpu', s['pc']['cpu'], 'ram', s['pc']['ramUsedGb'], '/', s['pc']['ramTotalGb'], 'procs', p['total'])"
+          set -euo pipefail
+          mkdir -p preview/macos-arm64
+          cp out/osx-arm64/PhoneBoxAgent preview/macos-arm64/PhoneBoxAgent
+          cp agent/PhoneBox.Agent/THIRD-PARTY-NOTICES.txt preview/macos-arm64/THIRD-PARTY-NOTICES.txt
+          cp LICENSE preview/macos-arm64/LICENSE
+          {
+            echo "EXPERIMENTAL PHONEBOX LITE AGENT — NOT CLEARED FOR INSTALLATION"
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "workflow=$GITHUB_RUN_ID"
+            echo "target=osx-arm64"
+            echo "cross_compiled=yes; NOT executed or notarized on macOS"
+          } > preview/macos-arm64/BUILD-INFO.txt
+          (cd preview/macos-arm64 && sha256sum PhoneBoxAgent > SHA256SUMS.txt)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: phonebox-agent-${{ matrix.rid }}
-          path: out/
-
-  artifact-transfer:
-    name: Artifact transfer contract
-    uses: ./.github/workflows/artifact-contract.yml
+          name: PhoneBoxLite-macOS-ARM64-preview
+          path: preview/macos-arm64/
+          if-no-files-found: error
+          retention-days: 3

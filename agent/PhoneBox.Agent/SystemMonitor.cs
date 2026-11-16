@@ -41,8 +41,7 @@ public sealed class SystemMonitor(ILogger<SystemMonitor> log) : BackgroundServic
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        _ = Task.Run(() => GpuLoop(ct), ct);
-        _ = Task.Run(() => CpuTempLoop(ct), ct);
+        // Lite: no GPU subprocesses, local sensor HTTP requests or hardware probes.
 
         var (idle0, total0) = CpuTimes();
         var net0 = NetBytes();
@@ -68,7 +67,7 @@ public sealed class SystemMonitor(ILogger<SystemMonitor> log) : BackgroundServic
 
             var (memUsed, memTotal) = Memory();
             const double Gb = 1024d * 1024 * 1024;
-            var gpus = Gpus.Compose(_nvidia, _lhmGpus, _osGpus);
+            var gpus = Array.Empty<GpuInfo>(); // Lite: avoid GPU drivers and external helpers
 
             _snap = new PcSnapshot(
                 Cpu: cpu is { } c ? Math.Round(c, 1) : null,

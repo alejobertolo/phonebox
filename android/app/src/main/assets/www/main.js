@@ -102,17 +102,8 @@ export const pushHist = (k, v) => { const a = hist[k]; a.push(v ?? 0); if (a.len
 // ---------------------------------------------------------------- helpers
 /** fetch() to the panel's local/USB feed proxy when the phone cannot reach an allowed public HTTPS feed directly. */
 export async function safeFetch(url, opts = {}) {
-  try {
-    return await fetch(url, opts);
-  } catch (e) {
-    if (!opts.signal?.aborted && typeof url === 'string' && url.startsWith('https://')) {
-      return await fetch(`${API}/proxy?url=${encodeURIComponent(url)}`, {
-        ...opts,
-        headers: { ...(opts.headers || {}), ...PANEL_HEADERS },
-      });
-    }
-    throw e;
-  }
+  // Lite v1 never fetches internet data or proxies arbitrary URLs.
+  throw new Error('External data sources disabled in PhoneBox Lite');
 }
 
 export async function api(path, method = 'GET', timeout = 2500) {
@@ -1637,7 +1628,7 @@ export async function loadPush() {
 
 export function setOnline(on) {
   document.body.classList.toggle('offline', !on);
-  if (on && online !== true) { loadConfig(); loadQuotas(); loadWork(); loadPush(); loadApprovals(); loadCalendar(); }
+  if (on && online !== true) { loadConfig(); } // passive local config only
   const changed = online !== on;
   online = on;
   if (changed) emit('state');
@@ -1724,8 +1715,7 @@ export async function poll() {
 buildLayout();
 applyDisplay();
 tick();
-loadWeather();
-setInterval(loadWeather, 15 * 60_000);
+// Lite: no weather fetches or other internet requests.
 setInterval(() => { if (!nightOn) emit('fast'); }, 250);
 setInterval(() => { if (online && anyNeeds('quotas')) loadQuotas(); }, 30_000);
 setInterval(() => { if (online && anyNeeds('calendar')) loadCalendar(); }, 120_000);
@@ -1751,7 +1741,7 @@ if (PREVIEW) {
     buildLayout();
     applyDisplay();
     const wk = JSON.stringify(cfg.weather);
-    if (wk !== weatherKey) { weatherKey = wk; loadWeather(); }
+    if (wk !== weatherKey) { weatherKey = wk; } // external feeds disabled
     // the editor's page index counts hidden pages too; the panel only has the shown ones
     const list = cfg.pages || [], sel = list[e.data.page];
     const shown = (p) => p.enabled !== false && Array.isArray(p.widgets);

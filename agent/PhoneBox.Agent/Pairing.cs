@@ -103,3 +103,6 @@ public sealed class PairingCodes
         return new SvgQRCode(data).GetGraphic(8, "#000000", "#ffffff", drawQuietZones: true);
     }
 }
+
+// Retained solely so legacy pairing helpers compile; Lite does not register pairing routes.
+internal sealed record PairClaim(string? Code);

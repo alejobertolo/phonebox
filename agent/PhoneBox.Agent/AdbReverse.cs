@@ -8,8 +8,8 @@ namespace PhoneBox.Agent;
 /// </summary>
 public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEndpoint? endpoint = null) : BackgroundService
 {
-    public const string PanelActivity = "net.oxog.phonebox.deskpanel/.MainActivity";
-    private const string HomeAlias = "net.oxog.phonebox.deskpanel/.HomeAlias";
+    public const string PanelActivity = "net.alejobertolo.phoneboxlite/net.oxog.phonebox.deskpanel.MainActivity";
+    private const string HomeAlias = "net.alejobertolo.phoneboxlite/net.oxog.phonebox.deskpanel.HomeAlias";
     private readonly HashSet<string> _homeSet = [];
     private readonly HashSet<string> _awakeSet = [];
     private volatile string[] _missingApp = [];
@@ -45,7 +45,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
 
     public async Task OpenPanelAsync()
     {
-        var adb = FindAdb(cfg.Get().AdbPath);
+        var adb = FindAdb(LiteSafety.SanitizedConfig(cfg.Get()).AdbPath);
         if (adb is null) return;
         foreach (var d in _devices)
         {
@@ -63,7 +63,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
 
     private async Task ApplyScreenAsync(string device, bool locked, CancellationToken ct)
     {
-        var adb = FindAdb(cfg.Get().AdbPath);
+        var adb = FindAdb(LiteSafety.SanitizedConfig(cfg.Get()).AdbPath);
         if (adb is null) throw new IOException("ADB is not available");
         if (locked) await Adb(adb, $"-s {device} shell input keyevent KEYCODE_SLEEP", ct);
         else
@@ -78,7 +78,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
 
     private async Task Ensure(CancellationToken ct)
     {
-        var adb = FindAdb(cfg.Get().AdbPath);
+        var adb = FindAdb(LiteSafety.SanitizedConfig(cfg.Get()).AdbPath);
         if (adb is null)
         {
             SetDevices([]);
@@ -87,7 +87,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
             return;
         }
 
-        var serial = cfg.Get().DeviceSerial;
+        var serial = LiteSafety.SanitizedConfig(cfg.Get()).DeviceSerial;
         var devices = (await Adb(adb, "devices", ct))
             .Split('\n').Skip(1)
             .Select(l => l.Trim().Split('\t'))
@@ -114,13 +114,13 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
             var ruled = HasOwnRule(list);
             if (ruled && !_missingApp.Contains(d)) continue;
             // is the app there at all? (the agent may have been installed on its own, with winget or Scoop)
-            var installed = (await Adb(adb, $"-s {d} shell pm path net.oxog.phonebox.deskpanel", ct, anyExit: true)).Contains("package:");
+            var installed = (await Adb(adb, $"-s {d} shell pm path net.alejobertolo.phoneboxlite", ct, anyExit: true)).Contains("package:");
             _missingApp = installed ? _missingApp.Where(x => x != d).ToArray() : _missingApp.Union([d]).ToArray();
             if (!installed) { Report($"{d}: the PhoneBox app is not installed (Settings › General › Install the phone app)"); continue; }
             if (ruled) continue;
             await Adb(adb, $"-s {d} reverse {Rule} {TargetRule}", ct);
             // A newly plugged-in phone must not light up while the computer is locked.
-            if (cfg.Get().Display.FollowComputerLock && OperatingSystem.IsMacOS())
+            if (LiteSafety.SanitizedConfig(cfg.Get()).Display.FollowComputerLock && OperatingSystem.IsMacOS())
             {
                 await SyncSessionAsync(ct, force: true);
             }
@@ -132,7 +132,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
             }
         }
         // Settings › Display › home screen: the app offers itself as a home app; make it the default one (no root needed).
-        if (cfg.Get().Display.HomeScreen)
+        if (LiteSafety.SanitizedConfig(cfg.Get()).Display.HomeScreen)
         {
             foreach (var d in devices.Where(d => !_homeSet.Contains(d)))
             {
@@ -146,7 +146,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
         else _homeSet.Clear();
         // Settings › Display › keep awake: Android's screen saver (Daydream) starts on the dock or charger and covers the
         // panel; turn it off and keep the screen on while plugged in (plain adb settings, no root).
-        if (cfg.Get().Display.KeepAwake)
+        if (LiteSafety.SanitizedConfig(cfg.Get()).Display.KeepAwake)
         {
             foreach (var d in devices.Where(d => !_awakeSet.Contains(d) && !_missingApp.Contains(d)))
             {
