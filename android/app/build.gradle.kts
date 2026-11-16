@@ -14,11 +14,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "net.oxog.phonebox.deskpanel"
+        applicationId = "net.alejobertolo.phoneboxlite"
         minSdk = 24
         targetSdk = 35
         versionCode = 34
-        versionName = "0.9.13"
+        versionName = "0.1.0-lite"
     }
 
     signingConfigs {
