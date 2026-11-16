@@ -22,34 +22,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Pairing without USB: the QR code on the computer's settings page. Android 12+ opens unverified https
-                 links in the browser; that page then offers phonebox://pair (the second filter). -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="ersinkoc.github.io" android:pathPrefix="/phonebox/pair" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="phonebox" android:host="pair" />
-            </intent-filter>
         </activity>
 
-        <!-- Settings › Display › "Use as the phone's home screen": enabled by the app itself (off by default). As the home
-             app the panel starts after a reboot and the Home button returns to it; no root needed. -->
-        <activity-alias
-            android:name=".HomeAlias"
-            android:enabled="false"
-            android:exported="true"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity-alias>
     </application>
 </manifest>
