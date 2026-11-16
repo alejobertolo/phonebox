@@ -50,4 +50,8 @@ for verb in POST PUT DELETE; do
   status="$(curl -sS -X "$verb" -o /dev/null -w '%{http_code}' --max-time 4 "$base/api/settings")"
   if [[ "$status" != 403 ]]; then echo "FAIL $verb /api/settings expected 403, got $status" >&2; exit 1; fi
 done
-echo "PASS: forbidden remote actions, proxy and write routes return HTTP 403"
+for header in 'Host: remote.example' 'Origin: https://remote.example'; do
+  status="$(curl -sS -H "$header" -o /dev/null -w '%{http_code}' --max-time 4 "$base/api/state")"
+  if [[ "$status" != 403 ]]; then echo "FAIL $header expected 403, got $status" >&2; exit 1; fi
+done
+echo "PASS: forbidden actions, writes, proxy and foreign web origins return HTTP 403"

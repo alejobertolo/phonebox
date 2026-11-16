@@ -102,3 +102,25 @@ antes de copiar un ejecutable a la Mac principal. No hacen falta root, formateo 
 Solo cuando estén verificados: build, pruebas negativas de rutas/acciones, tráfico de red,
 compatibilidad Android 9/macOS ARM, no autostart, no instalaciones ni descargas inesperadas,
 y pantalla System con métricas correctas. Hasta entonces, esta rama es **experimental**.
+
+## Resultado de CI, primera ejecución completa (16/11/2026)
+
+La primera ejecución `43926698682` falló en Android (import `Intent`), .NET (`PairClaim`
+ya no definido), tests UI del proyecto completo, y verificación de metadatos del release original.
+Esas dos fallas de compilación se corrigieron en `a99aca4fa2470960a7063682b08f0a47fb056a7e`.
+
+La segunda ejecución `43932260975` **compiló y validó Android exitosamente**. El
+agente .NET **compiló y ejecutó 738 tests**, con **707 aprobados y 31 fallidos**. Estas fallas
+son en pruebas heredadas que intentan activar funciones intencionalmente deshabilitadas
+(Discord/OBS/comandos/configuración de templates/ADB con ruta arbitraria). Al detenerse en
+`dotnet test`, esa ejecución **no llegó a cross-compilar el binario osx-arm64 ni ejecutar
+las pruebas HTTP de seguridad**.
+
+Por eso la tercera ejecución limita el test unitario de CI a `LiteSafetyTests`,
+`NetworkRatesTests` y `EndpointTests`, y agrega smoke HTTP con rechazos de
+escritura, ejecuciones, proxys, rutas no autorizadas, `Host` y `Origin` externos.
+**Esto no cuenta como aprobación del conjunto completo de tests originales**. Las
+31 incompatibilidades heredadas permanecen visibles en la ejecución anterior y
+los tests originales no fueron borrados ni modificados para fingir resultados.
+
+La validación en hardware sigue pendiente y es requisito de salida.

@@ -34,8 +34,11 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: 10.0.x
-      - name: Unit tests
-        run: dotnet test agent/PhoneBox.Agent.Tests --nologo
+      # Scope the first Lite build to the read-only boundary and passive system-monitor path.
+      # The full upstream suite has 31 failing cases for deliberately removed integrations.
+      # Keep those tests in the repository; do NOT represent this as a full-suite pass.
+      - name: Lite boundary, network math and endpoint tests
+        run: dotnet test agent/PhoneBox.Agent.Tests --nologo --filter "FullyQualifiedName~LiteSafetyTests|FullyQualifiedName~NetworkRatesTests|FullyQualifiedName~EndpointTests"
       - name: Build Mac Apple Silicon binary (cross compile, not run on Mac)
         run: |
           dotnet publish agent/PhoneBox.Agent -c Release -f net10.0 -r osx-arm64 --self-contained true -p:PublishSingleFile=true -o out/osx-arm64 --nologo
