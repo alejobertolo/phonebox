@@ -73,6 +73,18 @@ class LiteSourceContract(unittest.TestCase):
         self.assertNotIn("category.BROWSABLE", manifest)
         self.assertNotIn("activity-alias", manifest)
 
+    def test_gradle_distribution_is_checksum_pinned(self):
+        wrapper = source("android/gradle/wrapper/gradle-wrapper.properties")
+        self.assertIn(
+            "distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6",
+            wrapper,
+        )
+
+    def test_disk_names_are_anonymized(self):
+        host = source("agent/PhoneBox.Agent/Program.cs")
+        self.assertIn('Name = $"Disk {index + 1}"', host)
+        self.assertNotIn("snapshot.Disks,", host)
+
     def test_installers_are_non_operational(self):
         self.assertIn("exit 1", source("setup.sh"))
         self.assertIn('throw "PhoneBox Lite:', source("setup.ps1"))
