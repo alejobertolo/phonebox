@@ -33,8 +33,9 @@ builder.Services.AddSingleton(configStore);
 builder.Services.AddSingleton(endpoint);
 builder.Services.AddSingleton<SystemMonitor>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SystemMonitor>());
-builder.Services.AddSingleton<AdbReverse>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<AdbReverse>());
+// No ADB background service: connecting a phone must never wake it, launch
+// an activity, change device settings or start an adb subprocess implicitly.
+// The user configures adb reverse manually for each USB session.
 
 var app = builder.Build();
 string[] sameOrigins = [$"http://127.0.0.1:{endpoint.Port}", $"http://localhost:{endpoint.Port}"];
@@ -118,13 +119,19 @@ app.MapGet("/api/settings", (ConfigStore config, HttpResponse response) =>
 app.MapGet("/api/config", (ConfigStore config) =>
     Results.Json(new { version = config.Version, config = LiteSafety.SanitizedConfig(config.Get()).ToPublic() }));
 
-app.MapGet("/api/info", (AdbReverse adb) => Results.Json(new
+app.MapGet("/api/info", (HttpRequest request) =>
 {
-    version = AppPaths.Version,
-    os = AppPaths.Os,
-    connected = adb.Connected,
-    via = adb.Connected ? "USB" : null,
-}));
+    // This is presentation-only metadata, not authentication or device detection.
+    // The agent does not query connected devices or start ADB.
+    var isPanel = request.Headers["X-PhoneBox-App"].ToString() == "lite";
+    return Results.Json(new
+    {
+        version = AppPaths.Version,
+        os = AppPaths.Os,
+        connected = isPanel,
+        via = isPanel ? "manual-usb" : null,
+    });
+});
 
 app.MapGet("/api/state", (SystemMonitor monitor, ConfigStore config) =>
 {

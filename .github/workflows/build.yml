@@ -20,6 +20,8 @@ jobs:
           distribution: temurin
           java-version: 17
           cache: gradle
+      - name: Verify Lite source contract (static)
+        run: python3 tools/check-lite-source.py
       - name: Lint and compile Android debug APK
         working-directory: android
         run: |
@@ -34,6 +36,8 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: 10.0.x
+      - name: Verify Lite source contract (static)
+        run: python3 tools/check-lite-source.py
       # Scope the first Lite build to the read-only boundary and passive system-monitor path.
       # The full upstream suite has 31 failing cases for deliberately removed integrations.
       # Keep those tests in the repository; do NOT represent this as a full-suite pass.

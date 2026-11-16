@@ -5,9 +5,11 @@
 **Revisión del fork antes de cambios:** `b57d682f4acc591fd475f09baf3665995ffaabf2`.  
 **Equipo previsto:** MacBook Air Apple Silicon + Samsung con Android 9, conectados por USB.
 
-> **ESTADO: CÓDIGO EN REVISIÓN, NO APTO TODAVÍA PARA INSTALAR.**
-> Esta rama contiene cambios de seguridad y pruebas definidas, pero **no se ha compilado, ejecutado ni probado el agente
-> macOS o la APK en dispositivos reales**. No instalar ni ejecutar antes de la revisión y los controles pendientes.
+> **ESTADO: COMPILACIÓN CI APROBADA, PRUEBA EN DISPOSITIVOS AÚN PENDIENTE.**
+> GitHub Actions #43933124601 aprobó compilación de APK Android, cross-build para
+> macOS ARM64, 41 tests seleccionados y smoke HTTP en Linux. **No se ha ejecutado
+> el agente en la Mac real ni la APK en el Samsung**. No instalar hasta cerrar las
+> verificaciones de dependencias, transporte y prueba reversible.
 
 ## Objetivo inicial
 
@@ -22,8 +24,10 @@ controles de sistema, aplicaciones de trabajo, sesiones, archivos, credenciales 
   actualizaciones, emparejamiento Wi-Fi, webhooks, proxy HTTP, Home Assistant ni autorizaciones de herramientas.
 - Se mantiene una **lista explícita de rutas permitidas** en `LiteSafety.cs`; todo método distinto de GET se rechaza.
   La política se aplica también al prefijo del panel `/agent/api`.
-- El servidor escucha solo en `127.0.0.1`, sin listener en LAN/Tailscale. No se registran servicios en segundo
-  plano salvo la recopilación de métricas locales y la conexión USB/ADB.
+- El servidor escucha solo en `127.0.0.1`, sin listener en LAN/Tailscale. El único servicio
+  en segundo plano es la recopilación pasiva de métricas locales.
+  **Lite no ejecuta ni inicia ADB por su cuenta**: el usuario debe habilitar
+  `adb reverse` manualmente, tras conectar el teléfono de forma voluntaria.
 - La fuente de métricas evita sondeos GPU, llamadas a sensores locales por HTTP e integraciones externas.
 - La configuración compartida con el teléfono se reconstruye desde cero: **una sola página System**,
   sin comandos, reglas, tokens de emparejamiento ni accesos a apps.
@@ -67,9 +71,10 @@ en Android, instalación por ADB y comportamiento de la interfaz.
 
 ## Riesgos pendientes y verificaciones necesarias
 
-1. **Compilación y pruebas no ejecutadas**: hacen falta .NET SDK 10, JDK 17 y Android SDK Platform 35.
-   El entorno actual no tiene los SDK y no puede descargarlos; no se ejecutaron tests de .NET, Gradle, ni el checker Python localmente.
-   Los tests originales pueden asumir funcionalidades que esta variante intencionalmente eliminó.
+1. **Compilación y pruebas parciales superadas en CI:** Android lint + APK, cross-build macOS ARM64,
+   41 pruebas seleccionadas y smoke local Linux fueron exitosos en #43933124601.
+   La batería completa heredada dio 31 fallos en 738 pruebas (parte por funciones eliminadas);
+   el build no se ha ejecutado en Mac real ni Android 9 físico.
 2. **Supply chain**: revisar dependencias NuGet y Gradle, scripts de compilación, licencias y artefactos generados.
    Compilar desde fuente no elimina por sí solo los riesgos de dependencias y herramientas.
 3. **Pruebas HTTP integradas**: intentar acciones prohibidas con GET/POST/PUT/DELETE, rutas normalizadas,
@@ -124,3 +129,26 @@ escritura, ejecuciones, proxys, rutas no autorizadas, `Host` y `Origin` externos
 los tests originales no fueron borrados ni modificados para fingir resultados.
 
 La validación en hardware sigue pendiente y es requisito de salida.
+
+## Revisión enfocada de dependencias y ADB (16/11/2026)
+
+Se identificaron las dependencias directas desde manifiestos versionados:
+- macOS .NET 10 con `QRCoder 1.8.1` (código heredado de pairing, no expuesto en el host Lite).
+- Windows incorpora `NAudio 3.3.0` (no se necesita en Mac).
+- Android `androidx.webkit:webkit:1.12.1`, Android Gradle Plugin `8.7.3`, Kotlin `2.0.21`.
+- Gradle `8.11.1` con checksum fijado. Referencias GitHub Actions fijadas a SHA.
+- Test SDK, xUnit y runner permanecen como dependencias de desarrollo.
+
+**No se realizó un análisis exhaustivo de dependencias transitivas ni de avisos CVE**
+ni inspección de artefactos APK/binario. No afirmar que no tienen vulnerabilidades.
+
+Se encontró que el servicio ADB heredado abría el panel con `shell am start` y
+`input keyevent KEYCODE_WAKEUP` al conectar el teléfono; además conservaba rutas
+condicionales para modificar ajustes del dispositivo. Aunque la configuración Lite
+deshabilitaba estas últimas, **es más seguro no ejecutar ese servicio**. Se quitó
+`AdbReverse` de los servicios registrados en `Program.cs`, por lo que el agente
+Lite no buscará ni lanzará `adb` automáticamente. El transporte se habilitará
+solo mediante un comando `adb reverse` elegido por el usuario. El código heredado
+queda en el repositorio, pero no se ejecuta a través del host Lite.
+
+Ver `docs/LITE-USB-PREVIEW.md` para las condiciones y la secuencia reversible.

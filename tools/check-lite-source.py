@@ -29,7 +29,11 @@ class LiteSourceContract(unittest.TestCase):
         self.assertIn("LiteSafety.Allows(ctx.Request.Method", text)
         self.assertIn("k.Listen(IPAddress.Loopback, endpoint.Port)", text)
         self.assertNotIn("IPAddress.Any", text)
-        self.assertEqual(text.count("AddHostedService("), 2)
+        self.assertEqual(text.count("AddHostedService("), 1)
+        self.assertIn("AddHostedService(sp => sp.GetRequiredService<SystemMonitor>())", text)
+        self.assertNotIn("AddHostedService(sp => sp.GetRequiredService<AdbReverse>())", text)
+        self.assertNotIn("AddSingleton<AdbReverse>()", text)
+        self.assertNotIn("(AdbReverse adb)", text)
         for forbidden in ("MapPost(", "MapPut(", "MapDelete(", "UpdateService",
                           "ControlDeck", "CommandRunner", "ProcessMonitor"):
             self.assertNotIn(forbidden, text, forbidden)
@@ -51,6 +55,8 @@ class LiteSourceContract(unittest.TestCase):
         self.assertIn('AppName = "PhoneBoxLite"', app)
         self.assertIn('applicationId = "net.alejobertolo.phoneboxlite"', gradle)
         self.assertIn("net.alejobertolo.phoneboxlite", adb)
+        # Legacy ADB helpers may exist in source, but Lite must not start them.
+        self.assertNotIn("AdbReverse", source("agent/PhoneBox.Agent/Program.cs"))
 
     def test_android_transport_is_usb_and_read_only(self):
         transport = source("android/app/src/main/java/net/oxog/phonebox/deskpanel/AgentLink.kt")
