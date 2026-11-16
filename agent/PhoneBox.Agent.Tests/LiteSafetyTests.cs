@@ -9,7 +9,7 @@ public sealed class LiteSafetyTests
     [InlineData("GET", "/panel/", true)]
     [InlineData("GET", "/panel/main.js", true)]
     [InlineData("GET", "/api/state", true)]
-    [InlineData("GET", "/api/stream", true)]
+    [InlineData("GET", "/api/stream", false)]
     [InlineData("GET", "/api/config", true)]
     [InlineData("GET", "/api/catalog", true)]
     [InlineData("GET", "/api/settings", true)]
