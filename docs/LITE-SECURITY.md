@@ -28,11 +28,15 @@ controles de sistema, aplicaciones de trabajo, sesiones, archivos, credenciales 
 - La configuración compartida con el teléfono se reconstruye desde cero: **una sola página System**,
   sin comandos, reglas, tokens de emparejamiento ni accesos a apps.
 - Android solo solicita por HTTP local cuatro endpoints GET de telemetría/configuración mediante USB.
+  Se eliminó físicamente el transporte Wi-Fi/HTTPS y los procedimientos de emparejamiento del cliente.
   No reintenta por Wi-Fi ni inicia el stream de eventos; el panel utiliza el sondeo normal cada segundo.
 - El WebView rechaza recursos externos. Se desactivan deep links de emparejamiento, modo launcher/home,
   fijación de pantalla, depuración WebView y controles nativos de home/switching de PCs.
 - La APK tiene otro identificador: `net.alejobertolo.phoneboxlite`, para **no sobrescribir la aplicación original**.
 - Los scripts `setup.sh` y `setup.ps1` terminan expresamente con error; no descargan ni ejecutan binarios.
+- Los nombres de las unidades de disco se reemplazan por identificadores genéricos antes de enviarlos al teléfono.
+- La descarga de Gradle 8.11.1 lleva SHA-256 fijado contra el checksum oficial de Gradle.
+- `tools/check-lite-source.py` contiene ocho pruebas estáticas que impiden reintroducir rutas peligrosas, Wi-Fi o instaladores; **no reemplazan una compilación ni pruebas de ejecución**.
 - No hay servicio de inicio de sesión de macOS: el agente se ejecutaría manualmente durante la prueba.
 
 ## Endpoints GET disponibles
@@ -64,6 +68,7 @@ en Android, instalación por ADB y comportamiento de la interfaz.
 ## Riesgos pendientes y verificaciones necesarias
 
 1. **Compilación y pruebas no ejecutadas**: hacen falta .NET SDK 10, JDK 17 y Android SDK Platform 35.
+   El entorno actual no tiene los SDK y no puede descargarlos; no se ejecutaron tests de .NET, Gradle, ni el checker Python localmente.
    Los tests originales pueden asumir funcionalidades que esta variante intencionalmente eliminó.
 2. **Supply chain**: revisar dependencias NuGet y Gradle, scripts de compilación, licencias y artefactos generados.
    Compilar desde fuente no elimina por sí solo los riesgos de dependencias y herramientas.
@@ -81,6 +86,8 @@ en Android, instalación por ADB y comportamiento de la interfaz.
 No restaurar las funciones bloqueadas antes de reexaminar su frontera de seguridad.
 
 ## Comandos que usaremos en un entorno de desarrollo aislado, después de revisar dependencias
+
+Primero validaremos el contrato estático: `python3 tools/check-lite-source.py`.
 
 ```sh
 dotnet test agent/PhoneBox.Agent.Tests
