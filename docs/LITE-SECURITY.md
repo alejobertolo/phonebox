@@ -1,7 +1,8 @@
 # PhoneBox Lite — seguridad y estado de la versión experimental
 
 **Repositorio:** fork personal `alejobertolo/phonebox`, rama `feat/lite-read-only-v1`  
-**Base:** PhoneBox original de ersinkoc, licencia MIT (se conserva `LICENSE` y los avisos de terceros).  
+**Base:** PhoneBox original de ersinkoc, licencia MIT (se conserva `LICENSE` y los avisos de terceros).
+**Revisión del fork antes de cambios:** `b57d682f4acc591fd475f09baf3665995ffaabf2`.  
 **Equipo previsto:** MacBook Air Apple Silicon + Samsung con Android 9, conectados por USB.
 
 > **ESTADO: CÓDIGO EN REVISIÓN, NO APTO TODAVÍA PARA INSTALAR.**
