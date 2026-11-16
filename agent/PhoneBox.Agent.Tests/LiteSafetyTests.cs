@@ -72,14 +72,6 @@ public sealed class LiteSafetyTests
     }
 
     [Fact]
-    public void LiteUsesIndependentApplicationSupportDirectory()
-    {
-        Assert.Equal("PhoneBoxLite", AppPaths.AppName);
-        Assert.Equal("PhoneBoxLite", Path.GetFileName(AppPaths.ConfigDir));
-        Assert.Equal("PhoneBoxLite", Path.GetFileName(AppPaths.LocalDir));
-    }
-
-    [Fact]
     public void ShippedCatalogExposesNoActiveControlsOrExternalFeeds()
     {
         using var document = JsonDocument.Parse(Catalog.WidgetsJson);

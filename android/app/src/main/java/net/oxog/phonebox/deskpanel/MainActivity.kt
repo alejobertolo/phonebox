@@ -3,6 +3,7 @@ package net.oxog.phonebox.deskpanel
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityManager
+import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.hardware.Sensor
