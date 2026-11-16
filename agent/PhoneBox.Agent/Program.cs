@@ -28,9 +28,9 @@ if (!args.Contains("--config")) AppPaths.EnsureConfig();
 var configPath = Path.GetFullPath(args.SkipWhile(a => a != "--config").Skip(1).FirstOrDefault() ?? AppPaths.ConfigPath);
 AppPaths.RestrictConfig(configPath);
 var configStore = new ConfigStore(configPath);
-configStore.PersistGenerated(); // keep the Wi-Fi token stable across restarts
-var lanCfg = configStore.Get().Lan;
-var lanCert = lanCfg.Enabled ? Lan.Certificate() : null;
+// Lite must not generate pairing secrets or start a network listener.
+var lanCfg = new LanConfig { Enabled = false };
+System.Security.Cryptography.X509Certificates.X509Certificate2? lanCert = null;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -56,30 +56,30 @@ builder.Services.AddSingleton<AppCatalog>();
 builder.Services.AddSingleton<PairingCodes>();
 builder.Services.AddSingleton<SpotifyControl>();
 builder.Services.AddSingleton<ControlDeck>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<ControlDeck>());
+// No ControlDeck background worker in Lite: action routes are denied by the gate below.
 builder.Services.AddSingleton<PushStore>();
 builder.Services.AddSingleton<CommandRunner>();
 builder.Services.AddSingleton<ApprovalStore>();
 builder.Services.AddSingleton<HomeAssistant>();
 AddMonitor<SystemMonitor>(builder.Services);
-AddMonitor<MediaMonitor>(builder.Services);
-AddMonitor<QuotaMonitor>(builder.Services);
-AddMonitor<ProcessMonitor>(builder.Services);
-AddMonitor<SessionMonitor>(builder.Services);
-AddMonitor<GitHubMonitor>(builder.Services);
-AddMonitor<PingMonitor>(builder.Services);
+builder.Services.AddSingleton<MediaMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<QuotaMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<ProcessMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<SessionMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<GitHubMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<PingMonitor>(); // registered only for route binding; never started
 AddMonitor<AdbReverse>(builder.Services);
-AddMonitor<SessionLockMonitor>(builder.Services);
-AddMonitor<UpdateService>(builder.Services);
-AddMonitor<PrivacyMonitor>(builder.Services);
-AddMonitor<CalendarMonitor>(builder.Services);
-AddMonitor<DockerMonitor>(builder.Services);
-AddMonitor<ObsMonitor>(builder.Services);
-AddMonitor<DiscordMonitor>(builder.Services);
-AddMonitor<BatteryMonitor>(builder.Services);
-AddMonitor<RuleEngine>(builder.Services);
-AddMonitor<ChargeGuard>(builder.Services);
-builder.Services.AddHostedService<Tray>();
+builder.Services.AddSingleton<SessionLockMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<UpdateService>(); // registered only for route binding; never started
+builder.Services.AddSingleton<PrivacyMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<CalendarMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<DockerMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<ObsMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<DiscordMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<BatteryMonitor>(); // registered only for route binding; never started
+builder.Services.AddSingleton<RuleEngine>(); // registered only for route binding; never started
+builder.Services.AddSingleton<ChargeGuard>(); // registered only for route binding; never started
+// No tray agent and no login/autostart registration in Lite.
 
 var app = builder.Build();
 
@@ -150,6 +150,18 @@ app.Use((ctx, next) =>
 {
     if (ctx.Connection.LocalPort == Port && ctx.Request.Path.StartsWithSegments("/agent/api", out var rest))
         ctx.Request.Path = "/api" + rest;
+    return next(ctx);
+});
+
+// One default-deny boundary for USB clients AND desktop browsers.
+// Block even GET endpoints with side effects (commands, proxy, pairing, updates).
+app.Use((ctx, next) =>
+{
+    if (!LiteSafety.Allows(ctx.Request.Method, ctx.Request.Path.Value ?? ""))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    }
     return next(ctx);
 });
 
@@ -330,7 +342,7 @@ app.MapGet("/favicon.ico", () => AppPaths.Resource("phonebox.ico") is { } s ? Re
 // The version lets the settings page save only over what it loaded (X-Config-Version, see ConfigStore.Save).
 app.MapGet("/api/settings", (ConfigStore cfg, HttpResponse res) =>
 {
-    var json = JsonSerializer.Serialize(cfg.Get(), ConfigStore.WriteOpts);
+    var json = JsonSerializer.Serialize(LiteSafety.SanitizedConfig(cfg.Get()), ConfigStore.WriteOpts);
     res.Headers["X-Config-Version"] = cfg.Version.ToString();
     return Results.Text(json, "application/json; charset=utf-8");
 });
@@ -358,20 +370,12 @@ app.MapPost("/api/shortcuts/test", async (HttpRequest req, ConfigStore cfg, ILog
     return err is null ? Results.Ok() : Results.BadRequest(new { error = err });
 });
 
-app.MapGet("/api/info", (AdbReverse adb, ConfigStore cfg) => Results.Json(new
+app.MapGet("/api/info", (AdbReverse adb) => Results.Json(new
 {
     version = AppPaths.Version,
     os = AppPaths.Os,
-    configPath = cfg.Path,
-    logPath = AppPaths.LogPath,
-    adb = AdbReverse.FindAdb(cfg.Get().AdbPath),
-    // USB (adb) or a live stream from the phone in the last few seconds, which covers Wi-Fi / Tailscale too
-    connected = adb.Connected || ApprovalStore.PhoneConnected,
-    via = adb.Connected ? "USB" : ApprovalStore.PhoneConnected ? "Wi-Fi" : null,
-    devices = adb.AllDevices,
-    appMissing = adb.MissingApp,
-    usbProblem = adb.UsbProblem,
-    webviewProblem = WebViewDoctor.DiagnoseRecent(PhoneRegistry.All(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
+    connected = adb.Connected,
+    via = adb.Connected ? "USB" : null,
 }));
 
 app.MapPost("/api/phone/open", async (AdbReverse adb) => { await adb.OpenPanelAsync(); return Results.Ok(); });
@@ -419,28 +423,25 @@ app.MapPost("/api/refresh", (bool? reload, PushStore push) =>
 });
 
 // ---------------------------------------------------------------- phone panel API
+// A deliberately small state object: no host name, files, process lists, secrets,
+// remote-control states, sessions, integrations or provider data leave the Mac.
 object State(IServiceProvider sp, long? ev)
 {
-    var upd = sp.GetRequiredService<UpdateService>();
-    var push = sp.GetRequiredService<PushStore>();
+    var snapshot = sp.GetRequiredService<SystemMonitor>().Snapshot();
     return new
     {
-        update = upd.Status() is { } u && (u.AppUpdate || u.AgentUpdate) ? new { latest = u.Latest, app = u.AppUpdate, agent = u.AgentUpdate } : null,
         ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        host = Environment.MachineName,
         cfgVersion = sp.GetRequiredService<ConfigStore>().Version,
-        pushVersion = push.Version,
-        evSeq = push.Seq,
-        events = ev is { } since ? push.Since(since) : [],
-        pc = sp.GetRequiredService<SystemMonitor>().Snapshot(),
-        media = sp.GetRequiredService<ControlDeck>().EffectiveMedia(sp.GetRequiredService<MediaMonitor>().Snapshot()),
-        audio = sp.GetRequiredService<AudioControl>().Snapshot(),
-        ping = sp.GetRequiredService<PingMonitor>().Snapshot(),
-        rules = sp.GetRequiredService<RuleEngine>().Active(),
-        rulesPaused = sp.GetRequiredService<RuleEngine>().PausedUntil(),
-        privacy = sp.GetRequiredService<PrivacyMonitor>().Snapshot(),
-        obs = sp.GetRequiredService<ObsMonitor>().Snapshot() is { Connected: true } o ? new { o.Streaming, o.Recording, o.RecordPaused } : null,
-        toggles = Shortcuts.States(sp.GetRequiredService<ConfigStore>().Get(), push, sp.GetRequiredService<AudioControl>()),
+        pc = snapshot is null ? null : new
+        {
+            snapshot.Cpu,
+            snapshot.RamUsedGb,
+            snapshot.RamTotalGb,
+            snapshot.NetDownBps,
+            snapshot.NetUpBps,
+            snapshot.Disks,
+            snapshot.UptimeSec,
+        },
     };
 }
 
@@ -590,7 +591,7 @@ app.MapGet("/api/widget/{page}/{widget}", (string page, string widget, bool? for
     runner.Get(page, widget, force == true) is { } r ? Results.Json(r) : Results.NotFound());
 
 app.MapGet("/api/config", (ConfigStore cfg, HttpRequest req) =>
-    Results.Json(new { version = cfg.Version, config = cfg.Get().ToPublic(req.Headers["X-PhoneBox-Device"].ToString()) }));
+    Results.Json(new { version = cfg.Version, config = LiteSafety.SanitizedConfig(cfg.Get()).ToPublic(req.Headers["X-PhoneBox-Device"].ToString()) }));
 
 // Phones that have talked to this agent, with their settings (Settings › Phones).
 app.MapGet("/api/phones", (ConfigStore cfg) =>
