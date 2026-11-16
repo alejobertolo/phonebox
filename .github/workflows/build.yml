@@ -1,5 +1,5 @@
 # PhoneBox Lite CI (this workflow file differs from upstream only on the Lite branch).
-# No release, no installer tests and no build artifacts are published until reviewed.
+# No GitHub Releases. CI publishes 3-day SHA256-listed preview artifacts for inspection only.
 name: PhoneBox Lite — compile and verify
 
 on:
@@ -12,9 +12,12 @@ permissions:
 jobs:
   android:
     name: Android 9 compatibility and APK build
+    if: github.event_name == 'workflow_dispatch' || (github.head_ref == 'feat/lite-read-only-v1' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
@@ -27,12 +30,36 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew lintDebug assembleDebug --no-daemon --console=plain
+      - name: Prepare Android inspection preview with provenance and SHA256
+        run: |
+          set -euo pipefail
+          mkdir -p preview/android
+          cp android/app/build/outputs/apk/debug/app-debug.apk preview/android/PhoneBoxLite-debug.apk
+          cp LICENSE preview/android/LICENSE
+          {
+            echo "EXPERIMENTAL PHONEBOX LITE APK — NOT CLEARED FOR INSTALLATION"
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "workflow=$GITHUB_RUN_ID"
+            echo "package=net.alejobertolo.phoneboxlite"
+            echo "minimum=Android 7 (Android 9 not yet tested physically)"
+            echo "debug_signed=yes; NOT a production release"
+          } > preview/android/BUILD-INFO.txt
+          (cd preview/android && sha256sum PhoneBoxLite-debug.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: PhoneBoxLite-Android-preview
+          path: preview/android/
+          if-no-files-found: error
+          retention-days: 3
 
   agent:
     name: Agent unit tests and macOS ARM compilation
+    if: github.event_name == 'workflow_dispatch' || (github.head_ref == 'feat/lite-read-only-v1' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: 10.0.x
@@ -51,3 +78,24 @@ jobs:
         run: dotnet publish agent/PhoneBox.Agent -c Release -f net10.0 -r linux-x64 --self-contained false -o out/linux-x64 --nologo
       - name: Read-only API smoke test on temporary GitHub runner
         run: bash tools/lite-smoke.sh out/linux-x64/PhoneBoxAgent
+      - name: Prepare macOS ARM64 inspection preview with provenance and SHA256
+        run: |
+          set -euo pipefail
+          mkdir -p preview/macos-arm64
+          cp out/osx-arm64/PhoneBoxAgent preview/macos-arm64/PhoneBoxAgent
+          cp agent/PhoneBox.Agent/THIRD-PARTY-NOTICES.txt preview/macos-arm64/THIRD-PARTY-NOTICES.txt
+          cp LICENSE preview/macos-arm64/LICENSE
+          {
+            echo "EXPERIMENTAL PHONEBOX LITE AGENT — NOT CLEARED FOR INSTALLATION"
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "workflow=$GITHUB_RUN_ID"
+            echo "target=osx-arm64"
+            echo "cross_compiled=yes; NOT executed or notarized on macOS"
+          } > preview/macos-arm64/BUILD-INFO.txt
+          (cd preview/macos-arm64 && sha256sum PhoneBoxAgent > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: PhoneBoxLite-macOS-ARM64-preview
+          path: preview/macos-arm64/
+          if-no-files-found: error
+          retention-days: 3

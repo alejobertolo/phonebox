@@ -152,3 +152,21 @@ solo mediante un comando `adb reverse` elegido por el usuario. El código hereda
 queda en el repositorio, pero no se ejecuta a través del host Lite.
 
 Ver `docs/LITE-USB-PREVIEW.md` para las condiciones y la secuencia reversible.
+
+## Paquetes de inspección de CI (16/11/2026)
+
+El workflow `.github/workflows/build.yml` permite obtener **solo cuando cada job aprueba**
+los paquetes `PhoneBoxLite-Android-preview` y `PhoneBoxLite-macOS-ARM64-preview`,
+como artefactos de GitHub Actions con retención de tres días. Son paquetes **de inspección**,
+no releases ni instaladores autorizados. Contienen binario/APK, `SHA256SUMS.txt`,
+`BUILD-INFO.txt` con el SHA exacto y `LICENSE` (y avisos de terceros para macOS).
+
+Como el repositorio es público, estos paquetes pueden ser accesibles a otras personas.
+No contienen información personal, claves ni registros del usuario.
+El workflow usa un token de lectura y solo permite artefactos del head de la rama Lite
+propiedad del repositorio. No se hacen instalaciones ni cambios en equipos personales.
+
+El SHA256 confirma integridad del archivo recibido respecto del generado en CI,
+pero no verifica seguridad de dependencias. Siguen pendientes dependencias transitivas,
+inspección de binarios, pruebas en hardware y la firma/notarización adecuada de macOS.
+**No desactivar Gatekeeper para ejecutar binarios sin revisión.**
