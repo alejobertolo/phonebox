@@ -94,15 +94,19 @@ class MainActivity : Activity(), SensorEventListener {
             }
         }
         web.webViewClient = object : WebViewClient() {
+            // Block top-level navigation to third-party pages (including intent:// and file://).
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                request.url.toString() != "https://$ASSET_HOST/assets/www/index.html"
+
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val url = request.url
-                // Lite forbids all remote WebView traffic, including images, fonts and widgets.
+                // Deny unknown URLs even on the virtual assets host: otherwise WebView may fetch the internet.
                 if (url.scheme != "https" || url.host != ASSET_HOST) return FORBIDDEN()
                 if (url.path?.startsWith("/agent/") == true)
                     return if (fromPanel(request)) proxy(request) else FORBIDDEN()
-                val r = assetLoader.shouldInterceptRequest(url)
-                // the panel is made of ES modules, which need a JavaScript MIME type
-                if (r != null && url.path?.endsWith(".js") == true) r.mimeType = "text/javascript"
+                val r = assetLoader.shouldInterceptRequest(url) ?: return FORBIDDEN()
+                // The panel uses ES modules, which need a JavaScript MIME type.
+                if (url.path?.endsWith(".js") == true) r.mimeType = "text/javascript"
                 return r
             }
 
