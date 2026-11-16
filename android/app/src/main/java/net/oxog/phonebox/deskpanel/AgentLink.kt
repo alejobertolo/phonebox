@@ -121,26 +121,21 @@ class AgentLink(context: Context) {
     @Volatile private var preferredHost = 0
     @Volatile private var factory: Pair<String, SSLSocketFactory>? = null
 
-    /** Opens a long-lived GET (the live stream) over the best route; null when the PC is unreachable. */
-    fun stream(path: String): Pair<Route, Reply>? {
-        usb("GET", path, STREAM_READ_TIMEOUT)?.let { route = Route.USB; return Route.USB to it }
-        wifi("GET", path, STREAM_READ_TIMEOUT)?.let { route = Route.WIFI; return Route.WIFI to it }
-        return null
-    }
+    /** Lite uses 1-second polling over USB. No Wi-Fi and no long-lived stream. */
+    fun stream(path: String): Pair<Route, Reply>? = null
 
-    /** Forwards a request (method + path with query) to the agent over the best available route. */
+    /** Only the read-only agent API can be reached from the phone, always over USB. */
     fun request(method: String, pathAndQuery: String): Reply {
-        usb(method, pathAndQuery)?.let {
-            route = Route.USB
-            maybePair()
-            return it
+        val path = pathAndQuery.substringBefore('?')
+        if (method != "GET" || path !in setOf("/api/state", "/api/config", "/api/catalog", "/api/info")) {
+            return Reply(403, "application/json", ByteArrayInputStream("""{"error":"disabled in PhoneBox Lite"}""".toByteArray()))
         }
-        wifi(method, pathAndQuery)?.let {
-            route = Route.WIFI
+        usb("GET", pathAndQuery)?.let {
+            route = Route.USB
             return it
         }
         route = Route.NONE
-        return Reply(503, "application/json", ByteArrayInputStream("""{"error":"offline"}""".toByteArray()))
+        return Reply(503, "application/json", ByteArrayInputStream("""{"error":"USB disconnected"}""".toByteArray()))
     }
 
     private fun usb(method: String, pathAndQuery: String, readTimeout: Int = 4000): Reply? = try {
